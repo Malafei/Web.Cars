@@ -16,4 +16,10 @@ namespace Web.Cars.Models
         public string ConfirmPassword { get; set; }
         public IFormFile Photo { get; set; }
     }
+
+    public class LoginVievModel
+    {
+        public string Email { get; set; }
+        public string Password { get; set; }
+    }
 }

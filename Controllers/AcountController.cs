@@ -1,4 +1,5 @@
-﻿using Microsoft.AspNetCore.Http;
+﻿using AutoMapper;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using System;
@@ -6,54 +7,87 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
+using Web.Cars.Abstract;
 using Web.Cars.Data.Identity;
+using Web.Cars.Exceptions;
 using Web.Cars.Models;
+using Web.Cars.Services;
 
 namespace Web.Cars.Controllers
 {
+    
     [Route("api/[controller]")]
     [ApiController]
-
     public class AcountController : ControllerBase
     {
+        private readonly IUserService _userService;
         private readonly UserManager<AppUser> _userManager;
+        private readonly IJwtTocenService _tokenService;
 
-        public AcountController(UserManager<AppUser> userManager)
+
+        public AcountController(IUserService userService, UserManager<AppUser> userManager, IJwtTocenService tokenService)
         {
+            _userService = userService;
             _userManager = userManager;
+            _tokenService = tokenService;
         }
+
+
 
         [HttpPost("register")]
         public async Task<IActionResult> Register([FromForm]RegisterVievModel model)
         {
-            var user = await _userManager.FindByEmailAsync(model.Email); // шукаєм чи є такій логін в базі
-            if (user != null) // якщо юзер не дорівнює налл це означає що в базі є такий користувач і наш емаіл не буде універсальний
-                return ValidationProblem();
-
-            var ext = Path.GetExtension(model.Photo.FileName); //отримуємо формат файлу
-            string fileName = Path.GetRandomFileName() + ext; //генеруєм рандом імя та додає формат
-
-            var dir = Path.Combine(Directory.GetCurrentDirectory(), "images"); //витягуємо шлях
-            var filePath = Path.Combine(dir, fileName); // комбінуєм шлях і назву файла
-            using (var stream = System.IO.File.Create(filePath)) { model.Photo.CopyTo(stream); } // кідаєм в поток і записуєм у папку
-
-
-            user = new AppUser
+            try
             {
-                Email = model.Email,
-                Login = model.Login,
-                UserName = model.Login,
-                Photo = fileName
+                string token = await _userService.CreateUser(model);
 
-            };
+                return Ok(new
+                {
+                    token
+                });
+            }
+            catch(AccountException aex)
+            {
+                return BadRequest(aex._accountError);
+            }
+            catch(Exception ex)
+            {
+                return BadRequest(new AccountError("Щось пішло не так! " + ex.Message));
+            }
 
-            var result = await _userManager.CreateAsync(user, model.Password);
 
-            return Ok();
         }
-        
 
+        [HttpPost("login")]
+        public async Task<IActionResult> Login([FromBody] LoginVievModel model)
+        {
+            try
+            {
+                var user = await _userManager.FindByEmailAsync(model.Email);
+                if (await _userManager.CheckPasswordAsync(user, model.Password))
+                {
+                    string token = _tokenService.CreateToken(user);
+                    return Ok(
+                        new { token }
+                    );
+                }
+                else
+                {
 
+                    var exc = new AccountError();
+                    exc.Errors.Invalid.Add("Пароль не вірний!");
+                    throw new AccountException(exc);
+                }
+            }
+            catch (AccountException aex)
+            {
+                return BadRequest(aex._accountError);
+            }
+            catch
+            {
+                return BadRequest(new AccountError("Щось пішло не так!"));
+            }
+        }
 
     }
 }
